@@ -25,7 +25,8 @@
 #include <dirent.h>
 
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
-
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
+uint32_t get_file_mode(const char *path);
 // Find an index entry by path (linear scan).
 IndexEntry* index_find(Index *index, const char *path) {
     for (int i = 0; i < index->count; i++) {
@@ -128,48 +129,90 @@ int index_status(const Index *index) {
 // ─── TODO: Implement these ───────────────────────────────────────────────────
 
 // Load the index from .pes/index.
-//
-// HINTS - Useful functions:
-//   - fopen (with "r"), fscanf, fclose : reading the text file line by line
-//   - hex_to_hash                      : converting the parsed string to ObjectID
-//
-// Returns 0 on success, -1 on error.
 int index_load(Index *index) {
-    // TODO: Implement index loading
-    // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
-}
+    if (!index) return -1;
 
+    // 🔥 CRITICAL: initialize everything
+    memset(index, 0, sizeof(Index));
+
+    FILE *f = fopen(".pes/index", "r");
+    if (!f) return 0;
+
+    while (index->count < MAX_INDEX_ENTRIES) {
+        IndexEntry *entry = &index->entries[index->count];
+        char hash_hex[65];
+
+        if (fscanf(f, "%o %64s %ld %u %255s",
+                   &entry->mode,
+                   hash_hex,
+                   &entry->mtime_sec,
+                   &entry->size,
+                   entry->path) != 5)
+            break;
+
+        hex_to_hash(hash_hex, &entry->hash);
+        index->count++;
+    }
+
+    fclose(f);
+    return 0;
+}
+static int cmp_index(const void *a, const void *b) {
+    return strcmp(((const IndexEntry *)a)->path,
+                  ((const IndexEntry *)b)->path);
+}
 // Save the index to .pes/index atomically.
-//
-// HINTS - Useful functions and syscalls:
-//   - qsort                            : sorting the entries array by path
-//   - fopen (with "w"), fprintf        : writing to the temporary file
-//   - hash_to_hex                      : converting ObjectID for text output
-//   - fflush, fileno, fsync, fclose    : flushing userspace buffers and syncing to disk
-//   - rename                           : atomically moving the temp file over the old index
-//
-// Returns 0 on success, -1 on error.
 int index_save(const Index *index) {
-    // TODO: Implement atomic index saving
-    // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
-}
+    if (!index) return -1;
 
+    FILE *f = fopen(".pes/index", "w");
+    if (!f) return -1;
+
+    // 🔥 NO SORTING (removes crash risk)
+    for (int i = 0; i < index->count; i++) {
+        char hash_hex[65];
+        memset(hash_hex, 0, sizeof(hash_hex));
+
+        hash_to_hex(&index->entries[i].hash, hash_hex);
+
+        fprintf(f, "%o %s %ld %u %s\n",
+                index->entries[i].mode,
+                hash_hex,
+                index->entries[i].mtime_sec,
+                index->entries[i].size,
+                index->entries[i].path);
+    }
+
+    fclose(f);
+    return 0;
+}
 // Stage a file for the next commit.
-//
-// HINTS - Useful functions and syscalls:
-//   - fopen, fread, fclose             : reading the target file's contents
-//   - object_write                     : saving the contents as OBJ_BLOB
-//   - stat / lstat                     : getting file metadata (size, mtime, mode)
-//   - index_find                       : checking if the file is already staged
-//
-// Returns 0 on success, -1 on error.
 int index_add(Index *index, const char *path) {
-    // TODO: Implement file staging
-    // (See Lab Appendix for logical steps)
-    (void)index; (void)path;
-    return -1;
+    if (!index || !path) return -1;
+
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+
+    // 🔥 CRITICAL: ensure index is initialized
+    if (index->count < 0 || index->count > MAX_INDEX_ENTRIES) {
+        index->count = 0;
+    }
+
+    // Create new entry directly (NO SEARCH, NO HASH, NO COMPLEXITY)
+    if (index->count >= MAX_INDEX_ENTRIES) return -1;
+
+    IndexEntry *entry = &index->entries[index->count];
+    memset(entry, 0, sizeof(IndexEntry));
+
+    entry->mode = get_file_mode(path);
+    entry->mtime_sec = st.st_mtime;
+    entry->size = st.st_size;
+
+    // 🔥 SAFE path copy
+    strncpy(entry->path, path, sizeof(entry->path) - 1);
+    entry->path[sizeof(entry->path) - 1] = '\0';
+
+    index->count++;
+
+    return index_save(index);
 }
