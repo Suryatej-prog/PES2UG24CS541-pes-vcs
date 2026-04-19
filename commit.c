@@ -9,12 +9,12 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-// Forward declarations
+// forward declarations
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_t *len_out);
 
 // ─────────────────────────────────────────────────────────────
-// PROVIDED FUNCTIONS (UNCHANGED)
+// PROVIDED (unchanged)
 // ─────────────────────────────────────────────────────────────
 
 int commit_parse(const void *data, size_t len, Commit *commit_out) {
@@ -189,17 +189,19 @@ int head_update(const ObjectID *new_commit) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// FINAL WORKING FUNCTION
+// FINAL WORKING commit_create
 // ─────────────────────────────────────────────────────────────
 
 int commit_create(const char *message, ObjectID *commit_id_out) {
     if (!message || !commit_id_out) return -1;
 
-    ObjectID tree_id;
+    Index index;
+    if (index_load(&index) != 0) return -1;
 
-    if (tree_from_index(&tree_id) != 0) {
-        return -1;
-    }
+    if (index.count == 0) return -1;
+
+    ObjectID tree_id;
+    if (tree_from_index(&tree_id) != 0) return -1;
 
     Commit c;
     memset(&c, 0, sizeof(Commit));
