@@ -13,7 +13,9 @@
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_t *len_out);
 
-// PROVIDED FUNCTIONS (unchanged)
+// ─────────────────────────────────────────────────────────────
+// PROVIDED FUNCTIONS (UNCHANGED)
+// ─────────────────────────────────────────────────────────────
 
 int commit_parse(const void *data, size_t len, Commit *commit_out) {
     (void)len;
@@ -35,6 +37,7 @@ int commit_parse(const void *data, size_t len, Commit *commit_out) {
 
     char author_buf[256];
     uint64_t ts;
+
     if (sscanf(p, "author %255[^\n]\n", author_buf) != 1) return -1;
 
     char *last_space = strrchr(author_buf, ' ');
@@ -57,6 +60,7 @@ int commit_parse(const void *data, size_t len, Commit *commit_out) {
 int commit_serialize(const Commit *commit, void **data_out, size_t *len_out) {
     char tree_hex[HASH_HEX_SIZE + 1];
     char parent_hex[HASH_HEX_SIZE + 1];
+
     hash_to_hex(&commit->tree, tree_hex);
 
     char buf[8192];
@@ -184,37 +188,41 @@ int head_update(const ObjectID *new_commit) {
     return rename(tmp_path, target_path);
 }
 
-// 🔥 FINAL FUNCTION (THIS WAS MISSING)
+// ─────────────────────────────────────────────────────────────
+// FINAL WORKING FUNCTION
+// ─────────────────────────────────────────────────────────────
 
 int commit_create(const char *message, ObjectID *commit_id_out) {
     if (!message || !commit_id_out) return -1;
 
     ObjectID tree_id;
 
-    if (tree_from_index(&tree_id) != 0) return -1;
-
-    Commit commit;
-    memset(&commit, 0, sizeof(Commit));
-
-    commit.tree = tree_id;
-
-    ObjectID parent_id;
-    if (head_read(&parent_id) == 0) {
-        commit.parent = parent_id;
-        commit.has_parent = 1;
-    } else {
-        commit.has_parent = 0;
+    if (tree_from_index(&tree_id) != 0) {
+        return -1;
     }
 
-    snprintf(commit.author, sizeof(commit.author), "%s", pes_author());
-    commit.timestamp = (uint64_t)time(NULL);
+    Commit c;
+    memset(&c, 0, sizeof(Commit));
 
-    snprintf(commit.message, sizeof(commit.message), "%s", message);
+    c.tree = tree_id;
 
-    void *data = NULL;
-    size_t len = 0;
+    ObjectID parent;
+    if (head_read(&parent) == 0) {
+        c.parent = parent;
+        c.has_parent = 1;
+    } else {
+        c.has_parent = 0;
+    }
 
-    if (commit_serialize(&commit, &data, &len) != 0) return -1;
+    snprintf(c.author, sizeof(c.author), "%s", pes_author());
+    c.timestamp = (uint64_t)time(NULL);
+
+    snprintf(c.message, sizeof(c.message), "%s", message);
+
+    void *data;
+    size_t len;
+
+    if (commit_serialize(&c, &data, &len) != 0) return -1;
 
     if (object_write(OBJ_COMMIT, data, len, commit_id_out) != 0) {
         free(data);
